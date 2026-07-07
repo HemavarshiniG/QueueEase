@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Java / Maven
+*.class
+target/
+backend/target/
+
+# IDE
+*.iml
+
+# OS files
+Thumbs.db
