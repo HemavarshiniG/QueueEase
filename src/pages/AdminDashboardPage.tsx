@@ -1,37 +1,67 @@
 import { useState, useEffect } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Users, CheckCircle2, PlayCircle, LogOut, ArrowRight, UserCheck,
-  ChevronRight, RefreshCw, ClipboardList, HelpCircle
+  ChevronRight, RefreshCw, ClipboardList, HelpCircle, AlertCircle
 } from 'lucide-react'
-import { getMockQueue, type QueueStudent } from '../services/mockQueueService'
+import { getAuthorityNameFromToken } from '../services/apiService'
+import { 
+  getDashboardStatistics, getAuthorityQueue, callNextStudent, completeCurrentStudent,
+  type AuthorityQueueResponse, type DashboardStatisticsResponse 
+} from '../services/apiService'
+import { getAuthorityIdByName } from '../constants/queueConstants'
 
 export default function AdminDashboardPage() {
-  const location = useLocation()
   const navigate = useNavigate()
   
-  // Retrieve logged-in authority name from state, fallback to HOD IT
-  const authorityName = (location.state?.authorityName as string) || 'HOD - Information Technology'
+  // Retrieve logged-in authority name from the JWT token, fallback to HOD IT
+  const authorityName = getAuthorityNameFromToken() || 'HOD - Information Technology'
 
-  // Dashboard state: serving, waiting, and completed lists
-  const [activeStudent, setActiveStudent] = useState<QueueStudent | null>(null)
-  const [waitingQueue, setWaitingQueue] = useState<QueueStudent[]>([])
-  const [completedQueue, setCompletedQueue] = useState<QueueStudent[]>([])
+  // Dashboard state
+  const [activeStudent, setActiveStudent] = useState<AuthorityQueueResponse | null>(null)
+  const [waitingQueue, setWaitingQueue] = useState<AuthorityQueueResponse[]>([])
+  const [completedQueue, setCompletedQueue] = useState<AuthorityQueueResponse[]>([])
+  const [stats, setStats] = useState<DashboardStatisticsResponse | null>(null)
+  
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Initialize queue data on load using the extracted mock Queue Service
-  useEffect(() => {
-    const list = getMockQueue(authorityName)
-    if (list.length > 0) {
-      // Set first student as active and remaining as waiting
-      setActiveStudent({ ...list[0], status: 'serving' })
-      setWaitingQueue(list.slice(1))
+  // Load dashboard data from backend
+  const loadDashboardData = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+      const authorityId = getAuthorityIdByName(authorityName)
+      
+      const [queueItems, systemStats] = await Promise.all([
+        getAuthorityQueue(authorityId),
+        getDashboardStatistics()
+      ])
+
+      // Separate serving and waiting entries
+      const serving = queueItems.find(s => s.status === 'SERVING') || null
+      const waiting = queueItems.filter(s => s.status === 'WAITING')
+      
+      setActiveStudent(serving)
+      setWaitingQueue(waiting)
+      setStats(systemStats)
+    } catch (err: any) {
+      setError(err.message || 'Failed to retrieve dashboard details.')
+    } finally {
+      setIsLoading(false)
     }
+  }
+
+  // Initialize queue data on load
+  useEffect(() => {
+    loadDashboardData()
   }, [authorityName])
 
   // Log out back to login
   const handleLogout = () => {
+    localStorage.removeItem('token')
     navigate('/admin/login')
   }
 
@@ -42,34 +72,44 @@ export default function AdminDashboardPage() {
   }
 
   // Action: Call Next Student
-  const handleCallNext = () => {
-    // If there is currently an active student, complete them first
-    let tempCompleted = [...completedQueue]
-    if (activeStudent) {
-      tempCompleted.push({ ...activeStudent, status: 'completed' })
-    }
-
-    if (waitingQueue.length > 0) {
-      const next = waitingQueue[0]
-      setActiveStudent({ ...next, status: 'serving' })
-      setWaitingQueue(waitingQueue.slice(1))
-      setCompletedQueue(tempCompleted)
-      triggerAlert(`Called student ${next.studentName} (${next.tokenNumber})`)
-    } else {
-      setActiveStudent(null)
-      setCompletedQueue(tempCompleted)
-      triggerAlert('No more students in the waiting queue.')
+  const handleCallNext = async () => {
+    try {
+      setError(null)
+      const authorityId = getAuthorityIdByName(authorityName)
+      const response = await callNextStudent(authorityId)
+      triggerAlert(`Called student ${response.studentName} (${response.tokenNumber})`)
+      await loadDashboardData()
+    } catch (err: any) {
+      setError(err.message || 'No waiting students found or call failed.')
     }
   }
 
   // Action: Mark Active Student as Completed
-  const handleMarkCompleted = () => {
+  const handleMarkCompleted = async () => {
     if (!activeStudent) return
 
-    const completedStudent = { ...activeStudent, status: 'completed' as const }
-    setCompletedQueue(prev => [...prev, completedStudent])
-    setActiveStudent(null)
-    triggerAlert(`Completed session for ${completedStudent.studentName} (${completedStudent.tokenNumber})`)
+    try {
+      setError(null)
+      const authorityId = getAuthorityIdByName(authorityName)
+      const response = await completeCurrentStudent(authorityId)
+      triggerAlert(`Completed session for ${response.studentName} (${response.tokenNumber})`)
+      
+      // Cache completed student locally for live dashboard view history list
+      const completedStudent: AuthorityQueueResponse = {
+        tokenNumber: response.tokenNumber,
+        studentName: response.studentName,
+        registerNumber: response.registerNumber,
+        purposeOfVisit: response.purposeOfVisit,
+        queuePosition: response.queuePosition,
+        status: 'COMPLETED'
+      }
+      setCompletedQueue(prev => [completedStudent, ...prev])
+      setActiveStudent(null)
+      
+      await loadDashboardData()
+    } catch (err: any) {
+      setError(err.message || 'Failed to complete current student.')
+    }
   }
 
   return (
@@ -103,29 +143,29 @@ export default function AdminDashboardPage() {
           </div>
           <div className="flex items-center gap-4">
             <button 
-              onClick={() => {
-                const list = getMockQueue(authorityName)
-                if (list.length > 0) {
-                  setActiveStudent({ ...list[0], status: 'serving' })
-                  setWaitingQueue(list.slice(1))
-                  setCompletedQueue([])
-                  triggerAlert('Queue reset successfully.')
-                }
-              }}
-              className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200 bg-white"
-              title="Reset Queue"
+              onClick={loadDashboardData}
+              disabled={isLoading}
+              className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200 bg-white disabled:opacity-50"
+              title="Refresh Dashboard"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
             <button
               onClick={handleLogout}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 font-semibold text-xs transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-red-200 text-red-650 hover:bg-red-50 font-semibold text-xs transition-colors"
             >
               <LogOut className="w-4 h-4" />
               Sign Out
             </button>
           </div>
         </header>
+
+        {error && (
+          <div className="p-4 bg-red-50 border border-red-200 text-red-650 rounded-xl text-xs flex items-center gap-2 mb-6">
+            <AlertCircle className="w-4.5 h-4.5 shrink-0 text-red-500" />
+            <span className="font-semibold">{error}</span>
+          </div>
+        )}
 
         {/* Queue Summary Statistics Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
@@ -158,9 +198,9 @@ export default function AdminDashboardPage() {
               <CheckCircle2 className="w-6 h-6" />
             </div>
             <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Served Today</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">System Served Today</span>
               <span className="text-2xl font-black text-slate-900 block leading-tight">
-                {completedQueue.length}
+                {stats ? stats.completedCount : completedQueue.length}
               </span>
             </div>
           </div>
@@ -184,7 +224,7 @@ export default function AdminDashboardPage() {
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <span className="text-2xl font-black text-slate-900 tracking-tight">{activeStudent.tokenNumber}</span>
-                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-805">
                         In Progress
                       </span>
                     </div>
@@ -261,17 +301,7 @@ export default function AdminDashboardPage() {
                           <td className="py-3.5 font-medium text-blue-600">{student.purposeOfVisit}</td>
                           <td className="py-3.5 text-right pr-2">
                             <button
-                              onClick={() => {
-                                // Jump this specific student to active
-                                let tempCompleted = [...completedQueue]
-                                if (activeStudent) {
-                                  tempCompleted.push({ ...activeStudent, status: 'completed' })
-                                }
-                                setActiveStudent({ ...student, status: 'serving' })
-                                setWaitingQueue(waitingQueue.filter(s => s.tokenNumber !== student.tokenNumber))
-                                setCompletedQueue(tempCompleted)
-                                triggerAlert(`Called student ${student.studentName} (${student.tokenNumber})`)
-                              }}
+                              onClick={handleCallNext}
                               className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 opacity-0 group-hover:opacity-100 transition-opacity"
                             >
                               Call

@@ -38,3 +38,26 @@ export const getAuthorityPrefix = (authorityName: string): string => {
   const auth = AUTHORITIES.find(a => a.name === authorityName)
   return auth ? auth.prefix : 'GEN'
 }
+
+export const getAuthorityIdByName = (name: string): number => {
+  const mapping: { [key: string]: number } = {
+    'Principal': 1,
+    'Vice Principal': 2,
+    'Chairman': 3,
+    'Dean - Academics': 4,
+    'Dean - Student Affairs': 5,
+    'HOD - Information Technology': 6,
+    'HOD - Computer Science': 7,
+    'HOD - Artificial Intelligence & Data Science': 8,
+    'HOD - Electronics & Communication': 9,
+    'HOD - Mechanical Engineering': 10,
+    'HOD - Civil Engineering': 11,
+    'HOD - Electrical & Electronics Engineering': 12,
+    'Placement Officer': 13,
+    'Controller of Examinations': 14,
+    'Office Superintendent': 15,
+    'Librarian': 16
+  }
+  return mapping[name] || 1
+}
+

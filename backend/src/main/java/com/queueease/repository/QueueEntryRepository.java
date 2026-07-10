@@ -27,7 +27,17 @@ public interface QueueEntryRepository extends JpaRepository<QueueEntry, Long> {
         QueueStatus status
     );
 
+    long countByAuthorityIdAndStatusAndQueuePositionLessThan(
+        Long authorityId,
+        QueueStatus status,
+        Integer queuePosition
+    );
+
     List<QueueEntry> findByStudentIdOrderByCreatedAtDesc(
         Long studentId
     );
+
+    long countByStatus(QueueStatus status);
+
+    long countByCreatedAtGreaterThanEqual(java.time.LocalDateTime dateTime);
 }

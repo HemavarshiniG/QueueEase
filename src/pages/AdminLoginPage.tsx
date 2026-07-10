@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Lock, KeyRound, AlertCircle, CheckCircle } from 'lucide-react'
 import { AUTHORITIES } from '../constants/queueConstants'
+import { login, setAuthToken } from '../services/apiService'
 
 interface FormState {
   authorityName: string
@@ -28,6 +29,7 @@ export default function AdminLoginPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showToast, setShowToast] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
 
   // Form Validation
   const getErrors = () => {
@@ -61,8 +63,8 @@ export default function AdminLoginPage() {
     setTouched(prev => ({ ...prev, [field]: true }))
   }
 
-  // Handle Login submission - ready to connect to a Spring Boot Spring Security REST API later
-  const handleSubmit = (e: React.FormEvent) => {
+  // Handle Login submission - connects to Spring Boot security REST API
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     setTouched({
@@ -73,13 +75,15 @@ export default function AdminLoginPage() {
     if (!isFormValid) return
 
     setIsSubmitting(true)
+    setLoginError(null)
 
-    // Simulate backend auth check (Spring Boot Spring Security login response)
-    setTimeout(() => {
+    try {
+      const response = await login(form.authorityName, form.password)
+      setAuthToken(response.token)
       setIsSubmitting(false)
       setShowToast(true)
 
-      // Redirect to Admin Dashboard page, passing the logged-in authority's name
+      // Redirect to Admin Dashboard page after success animation
       setTimeout(() => {
         navigate('/admin/dashboard', { 
           state: { 
@@ -88,8 +92,10 @@ export default function AdminLoginPage() {
           } 
         })
       }, 1200)
-
-    }, 800)
+    } catch (err: any) {
+      setIsSubmitting(false)
+      setLoginError(err.message || 'Invalid authority name or password.')
+    }
   }
 
   return (
@@ -141,6 +147,13 @@ export default function AdminLoginPage() {
               <p className="text-xs text-slate-500">Log in to manage authority-specific queues</p>
             </div>
           </div>
+          
+          {loginError && (
+            <div className="p-3.5 bg-red-50 border border-red-200 text-red-650 rounded-xl text-xs flex items-center gap-2 mb-6">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+              <span className="font-semibold">{loginError}</span>
+            </div>
+          )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">

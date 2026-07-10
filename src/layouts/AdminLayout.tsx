@@ -1,7 +1,21 @@
+import { useEffect } from 'react'
 import { Outlet, Link, useNavigate } from 'react-router-dom'
+import { isAuthenticated, getAuthorityNameFromToken, clearAuthToken } from '../services/apiService'
 
 export default function AdminLayout() {
   const navigate = useNavigate()
+  const authorityName = getAuthorityNameFromToken()
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate('/admin/login')
+    }
+  }, [navigate])
+
+  const handleLogout = () => {
+    clearAuthToken()
+    navigate('/admin/login')
+  }
 
   return (
     <div className="min-h-screen flex bg-background text-foreground">
@@ -22,7 +36,7 @@ export default function AdminLayout() {
         </nav>
         <div className="p-4 border-t">
           <button 
-            onClick={() => navigate('/admin/login')}
+            onClick={handleLogout}
             className="w-full text-left px-4 py-2 rounded-md text-destructive hover:bg-destructive/10 transition-colors font-medium"
           >
             Logout
@@ -35,7 +49,7 @@ export default function AdminLayout() {
         <header className="h-16 border-b flex items-center justify-between px-8 bg-card">
           <h2 className="text-lg font-semibold">Admin Panel</h2>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">Logged in as Admin</span>
+            <span className="text-sm text-muted-foreground">Logged in as {authorityName || 'Admin'}</span>
           </div>
         </header>
         <main className="flex-1 p-8 overflow-y-auto">

@@ -5,8 +5,9 @@ import {
   ArrowLeft, Ticket, CheckCircle, AlertCircle, PlayCircle, 
   Users, Clock, Activity, HelpCircle, AlertTriangle, ArrowRight, Edit2
 } from 'lucide-react'
-import { AUTHORITIES, PURPOSES_OF_VISIT, getAuthorityPrefix } from '../constants/queueConstants'
+import { AUTHORITIES, PURPOSES_OF_VISIT, getAuthorityIdByName } from '../constants/queueConstants'
 import { getAuthorityQueueStatus, type AuthorityQueueStatus } from '../services/mockQueueService'
+import { joinQueue } from '../services/apiService'
 
 interface FormState {
   studentName: string
@@ -52,6 +53,7 @@ export default function JoinQueuePage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showToast, setShowToast] = useState(false)
+  const [joinError, setJoinError] = useState<string | null>(null)
   
   // Dynamic status details
   const [statusData, setStatusData] = useState<AuthorityQueueStatus | null>(null)
@@ -110,7 +112,7 @@ export default function JoinQueuePage() {
   }
 
   // Handle Form Submission
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     setTouched({
@@ -123,31 +125,35 @@ export default function JoinQueuePage() {
     if (!isFormValid) return
 
     setIsSubmitting(true)
+    setJoinError(null)
 
-    // Simulate backend network latency
-    setTimeout(() => {
-      const prefix = getAuthorityPrefix(form.authorityToMeet)
-      const peopleAhead = statusData ? statusData.waitingCount : Math.floor(Math.random() * 16)
-      const waitTime = statusData ? statusData.estimatedWaitMinutes : 2 + Math.floor(Math.random() * 19)
+    try {
+      const authorityId = getAuthorityIdByName(form.authorityToMeet)
+      // Call Spring Boot backend to register student to queue
+      const response = await joinQueue({
+        studentName: form.studentName,
+        registerNumber: form.registerNumber,
+        department: 'General', // default department as it is not exposed in the visual layout
+        year: 1, // default year as it is not exposed in the visual layout
+        authorityId: authorityId,
+        purposeOfVisit: form.purposeOfVisit,
+        email: form.preferredDate || undefined,
+        phoneNumber: form.preferredTime || undefined
+      })
 
-      let suffix = 101
-      if (statusData) {
-        const servingParts = statusData.currentlyServing.split('-')
-        const currentServingSuffix = servingParts.length === 2 ? parseInt(servingParts[1], 10) : 101
-        suffix = currentServingSuffix + statusData.waitingCount + 1
-      }
-      const tokenNumber = `${prefix}-${String(suffix).padStart(3, '0')}`
+      // Store generated token in local storage to keep state valid on refreshes
+      localStorage.setItem('activeToken', response.tokenNumber)
 
       const payload = {
         studentName: form.studentName,
         registerNumber: form.registerNumber,
-        authorityToMeet: form.authorityToMeet,
+        authorityToMeet: response.authorityName,
         purposeOfVisit: form.purposeOfVisit,
         preferredDate: form.preferredDate,
         preferredTime: form.preferredTime,
-        tokenNumber,
-        peopleAhead,
-        waitTime,
+        tokenNumber: response.tokenNumber,
+        peopleAhead: response.estimatedWaitingCount,
+        waitTime: response.estimatedWaitingCount * 3,
         createdAt: new Date().toISOString()
       }
 
@@ -158,7 +164,10 @@ export default function JoinQueuePage() {
         navigate('/status', { state: { tokenData: payload } })
       }, 1500)
 
-    }, 800)
+    } catch (err: any) {
+      setIsSubmitting(false)
+      setJoinError(err.message || 'Failed to join the queue. Please try again.')
+    }
   }
 
   // Action: Choose Another Authority / Reset Step 1
@@ -336,6 +345,12 @@ export default function JoinQueuePage() {
 
                   {/* Form */}
                   <form onSubmit={handleSubmit} className="space-y-6">
+                    {joinError && (
+                      <div className="p-3.5 bg-red-50 border border-red-200 text-red-650 rounded-xl text-xs flex items-center gap-2 mb-6">
+                        <AlertCircle className="w-4.5 h-4.5 shrink-0 text-red-500" />
+                        <span className="font-semibold">{joinError}</span>
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       {/* Name */}
                       <div className="flex flex-col">

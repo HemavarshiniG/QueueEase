@@ -2,6 +2,8 @@ package com.queueease.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -25,6 +27,8 @@ public class JoinQueueRequest {
     private String department;
 
     @NotNull(message = "Year is required")
+    @Min(value = 1, message = "Year must be at least 1")
+    @Max(value = 5, message = "Year must be at most 5")
     private Integer year;
 
     private String email;
